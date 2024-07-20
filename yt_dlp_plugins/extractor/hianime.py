@@ -60,6 +60,18 @@ class HiAnimeIE(InfoExtractor):
             'sub': 'ja',
             'dub': 'en',
         }
+        self.language_codes = {
+            'Arabic': 'ar',
+            'English Dubbed': 'en-IN',
+            'English Subbed': 'en',
+            'French - Francais(France)': 'fr',
+            'German - Deutsch': 'de',
+            'Italian - Italiano': 'it',
+            'Portuguese - Portugues(Brasil)': 'pt',
+            'Russian': 'ru',
+            'Spanish - Espanol': 'es',
+            'Spanish - Espanol(Espana)': 'es',
+        }
 
     def _real_extract(self, url):
         mobj = self._match_valid_url(url)
@@ -174,7 +186,6 @@ class HiAnimeIE(InfoExtractor):
                     break
 
                 extracted_formats = self._extract_custom_m3u8_formats(file_url, episode_id, server_type)
-                # print(extracted_formats)
                 formats.extend(extracted_formats)
 
             tracks = video_data.get('tracks', [])
@@ -185,17 +196,20 @@ class HiAnimeIE(InfoExtractor):
                     language = track.get('label')
                     if language == 'English':
                         language = f'{language} {server_type.capitalize()}bed'
+                    language_code = self.language_codes.get(language)
+                    if not language_code:
+                        language_code = language
 
                     if not file_url:
                         break
 
-                    if (language) not in subtitles:
-                        subtitles[language] = []
+                    if (language_code) not in subtitles:
+                        subtitles[language_code] = []
 
-                    subtitles[language].append({
+                    subtitles[language_code].append({
+                        'name': language,
                         'url': file_url,
                     })
-        subtitles = dict(sorted(subtitles.items()))
 
         return {
             'id': episode_id,
