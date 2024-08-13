@@ -59,6 +59,7 @@ class HiAnimeIE(InfoExtractor):
         self.language = {
             'sub': 'ja',
             'dub': 'en',
+            'raw': 'ja'
         }
         self.language_codes = {
             'Arabic': 'ar',
@@ -155,35 +156,35 @@ class HiAnimeIE(InfoExtractor):
         formats = []
         subtitles = {}
 
-        for server_type in ['sub', 'dub']:
+        for server_type in ['sub', 'dub', 'raw']:
             server_items = self._get_elements_by_tag_and_attrib(servers_data['html'], tag='div', attribute='data-type', value=f'{server_type}', escape_value=False)
             server_id = next((re.search(r'data-id="([^"]+)"', item.group(0)).group(1) for item in server_items if re.search(r'data-id="([^"]+)"', item.group(0))), None)
 
             if not server_id:
-                break
+                continue
 
             sources_url = f'https://hianime.to/ajax/v2/episode/sources?id={server_id}'
-            sources_data = self._download_json(sources_url, episode_id, note=f'Getting {server_type.upper()}BED Episode Information')
+            sources_data = self._download_json(sources_url, episode_id, note=f'Getting {server_type.upper()} Episode Information')
             link = sources_data.get('link')
 
             if not link:
-                break
+                continue
 
             sources_id_match = re.search(r'/embed-2/[^/]+/([^?]+)\?', link)
             sources_id = sources_id_match.group(1) if sources_id_match else None
 
             if not sources_id:
-                break
+                continue
 
             video_url = f'https://megacloud.tv/embed-2/ajax/e-1/getSources?id={sources_id}'
-            video_data = self._download_json(video_url, episode_id, note=f'Getting {server_type.upper()}BED Episode Formats')
+            video_data = self._download_json(video_url, episode_id, note=f'Getting {server_type.upper()} Episode Formats')
             sources = video_data.get('sources', [])
 
             for source in sources:
                 file_url = source.get('file')
 
                 if not (file_url and file_url.endswith('.m3u8')):
-                    break
+                    continue
 
                 extracted_formats = self._extract_custom_m3u8_formats(file_url, episode_id, server_type)
                 formats.extend(extracted_formats)
