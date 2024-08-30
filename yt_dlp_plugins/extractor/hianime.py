@@ -106,7 +106,7 @@ class HiAnimeIE(InfoExtractor):
         anime_title = self._get_anime_title(slug, playlist_id)
         playlist_url = f'https://hianime.to/ajax/v2/episode/list/{playlist_id}'
         playlist_data = self._download_json(playlist_url, playlist_id, note='Fetching Episode List')
-        episodes = self._get_elements_by_tag_and_attrib(playlist_data['html'], tag='a', attribute='class', value='ssl-item  ep-item')
+        episodes = self._get_elements_by_tag_and_attrib(playlist_data['html'], tag='a', attribute='class', value='ep-item')
 
         entries = []
         for episode in episodes:
@@ -233,7 +233,7 @@ class HiAnimeIE(InfoExtractor):
 
         if value:
             value = re.escape(value) if escape_value else value
-            value = f'=[\'"]?(?P<value>{value})[\'"]?'
+            value = f'=[\'"]?(?P<value>.*?{value}.*?)[\'"]?'
 
         return list(re.finditer(rf'''(?xs)
             <{tag}
