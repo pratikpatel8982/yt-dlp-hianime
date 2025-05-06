@@ -1,15 +1,19 @@
+import os
 import re
+import json
+import platform
+import subprocess
 
 from yt_dlp.extractor.common import InfoExtractor
 from yt_dlp.utils import ExtractorError, clean_html, get_element_by_class
 
 
 class HiAnimeIE(InfoExtractor):
-    _VALID_URL = r'https?://hianime\.to/(?:watch/)?(?P<slug>[^/?]+)(?:-\d+)?-(?P<playlist_id>\d+)(?:\?ep=(?P<episode_id>\d+))?$'
+    _VALID_URL = r'https?://hianime(?:z)?\.to/(?:watch/)?(?P<slug>[^/?]+)(?:-\d+)?-(?P<playlist_id>\d+)(?:\?ep=(?P<episode_id>\d+))?$'
 
     _TESTS = [
         {
-            'url': 'https://hianime.to/demon-slayer-kimetsu-no-yaiba-hashira-training-arc-19107',
+            'url': 'https://hianimez.to/demon-slayer-kimetsu-no-yaiba-hashira-training-arc-19107',
             'info_dict': {
                 'id': '19107',
                 'title': 'Demon Slayer: Kimetsu no Yaiba Hashira Training Arc',
@@ -17,7 +21,7 @@ class HiAnimeIE(InfoExtractor):
             'playlist_count': 8,
         },
         {
-            'url': 'https://hianime.to/watch/demon-slayer-kimetsu-no-yaiba-hashira-training-arc-19107?ep=124260',
+            'url': 'https://hianimez.to/watch/demon-slayer-kimetsu-no-yaiba-hashira-training-arc-19107?ep=124260',
             'info_dict': {
                 'id': '124260',
                 'title': 'To Defeat Muzan Kibutsuji',
@@ -30,7 +34,7 @@ class HiAnimeIE(InfoExtractor):
             },
         },
         {
-            'url': 'https://hianime.to/the-eminence-in-shadow-17473',
+            'url': 'https://hianimez.to/the-eminence-in-shadow-17473',
             'info_dict': {
                 'id': '17473',
                 'title': 'The Eminence in Shadow',
@@ -38,7 +42,7 @@ class HiAnimeIE(InfoExtractor):
             'playlist_count': 20,
         },
         {
-            'url': 'https://hianime.to/watch/the-eminence-in-shadow-17473?ep=94440',
+            'url': 'https://hianimez.to/watch/the-eminence-in-shadow-17473?ep=94440',
             'info_dict': {
                 'id': '94440',
                 'title': 'The Hated Classmate',
@@ -79,6 +83,7 @@ class HiAnimeIE(InfoExtractor):
         playlist_id = mobj.group('playlist_id')
         episode_id = mobj.group('episode_id')
         slug = mobj.group('slug')
+        self.base_url = re.match(r'https?://[^/]+', url).group(0)
 
         if episode_id:
             return self._extract_episode(slug, playlist_id, episode_id, url)
@@ -87,55 +92,40 @@ class HiAnimeIE(InfoExtractor):
         else:
             raise ExtractorError('Unsupported URL format')
 
-    def _extract_custom_m3u8_formats(self, m3u8_url, episode_id, server_type=None):
-        formats = self._extract_m3u8_formats(m3u8_url, episode_id, 'mp4', entry_protocol='m3u8_native', fatal=False, note='Downloading M3U8 Information')
-
-        for f in formats:
-            height = f.get('height')
-            f['format_id'] = f'{server_type.upper()}{height}p'
-            f['language'] = self.language[server_type]
-        return formats
-
-    def _get_anime_title(self, slug, playlist_id):
-        if not self.anime_title:
-            webpage = self._download_webpage(f'https://hianime.to/{slug}-{playlist_id}', playlist_id, note='Fetching Anime Title')
-            self.anime_title = get_element_by_class('film-name dynamic-name', webpage)
-        return self.anime_title
+    # ========== Playlist and Episode Extraction ==========
 
     def _extract_playlist(self, slug, playlist_id, url):
         anime_title = self._get_anime_title(slug, playlist_id)
-        playlist_url = f'https://hianime.to/ajax/v2/episode/list/{playlist_id}'
+        playlist_url = f'{self.base_url}/ajax/v2/episode/list/{playlist_id}'
         playlist_data = self._download_json(playlist_url, playlist_id, note='Fetching Episode List')
-        episodes = self._get_elements_by_tag_and_attrib(playlist_data['html'], tag='a', attribute='class', value='ep-item')
+        episodes = self._get_elements_by_tag_and_attrib(
+            playlist_data['html'], tag='a', attribute='class', value='ep-item'
+        )
 
         entries = []
         for episode in episodes:
-            episode_html = episode.group(0)
+            html = episode.group(0)
+            title = re.search(r'title="([^"]+)"', html)
+            number = re.search(r'data-number="([^"]+)"', html)
+            data_id = re.search(r'data-id="([^"]+)"', html)
+            href = re.search(r'href="([^"]+)"', html)
 
-            # Extract episode details
-            title_match = re.search(r'title="([^"]+)"', episode_html)
-            data_number_match = re.search(r'data-number="([^"]+)"', episode_html)
-            data_id_match = re.search(r'data-id="([^"]+)"', episode_html)
-            href_match = re.search(r'href="([^"]+)"', episode_html)
+            ep_id = data_id.group(1) if data_id else None
+            ep_title = clean_html(title.group(1)) if title else None
+            ep_number = int(number.group(1)) if number else None
+            ep_url = f'{self.base_url}{href.group(1)}' if href else None
 
-            title = clean_html(title_match.group(1)) if title_match else None
-            data_number = data_number_match.group(1) if data_number_match else None
-            data_id = data_id_match.group(1) if data_id_match else None
-            url = f'https://hianime.to{href_match.group(1)}' if href_match else None
-
-            # Add episode details to episode_list
-            self.episode_list[data_id] = {
-                'title': title,
-                'number': int(data_number),
-                'url': url,
+            self.episode_list[ep_id] = {
+                'title': ep_title,
+                'number': ep_number,
+                'url': ep_url,
             }
 
-            # Prepare entry for playlist result
             entries.append(self.url_result(
-                url,
+                ep_url,
                 ie=self.ie_key(),
-                video_id=data_id,
-                video_title=title,
+                video_id=ep_id,
+                video_title=ep_title,
             ))
 
         return self.playlist_result(entries, playlist_id, anime_title)
@@ -143,72 +133,70 @@ class HiAnimeIE(InfoExtractor):
     def _extract_episode(self, slug, playlist_id, episode_id, url):
         anime_title = self._get_anime_title(slug, playlist_id)
         episode_data = self.episode_list.get(episode_id)
+
         if not episode_data:
             self._extract_playlist(slug, playlist_id, url)
             episode_data = self.episode_list.get(episode_id)
+
         if not episode_data:
             raise ExtractorError(f'Episode data for episode_id {episode_id} not found')
 
-        # Extract episode information and formats
-        servers_url = f'https://hianime.to/ajax/v2/episode/servers?episodeId={episode_id}'
+        servers_url = f'{self.base_url}/ajax/v2/episode/servers?episodeId={episode_id}'
         servers_data = self._download_json(servers_url, episode_id, note='Fetching Server IDs')
 
         formats = []
         subtitles = {}
 
         for server_type in ['sub', 'dub', 'raw']:
-            server_items = self._get_elements_by_tag_and_attrib(servers_data['html'], tag='div', attribute='data-type', value=f'{server_type}', escape_value=False)
-            server_id = next((re.search(r'data-id="([^"]+)"', item.group(0)).group(1) for item in server_items if re.search(r'data-id="([^"]+)"', item.group(0))), None)
+            server_items = self._get_elements_by_tag_and_attrib(
+                servers_data['html'], tag='div', attribute='data-type', value=server_type, escape_value=False
+            )
+            server_items = [s for s in server_items if f'data-type="{server_type}"' in s.group(0)]
 
+            server_id = next(
+                (re.search(r'data-id="([^"]+)"', s.group(0)).group(1)
+                 for s in server_items if re.search(r'data-id="([^"]+)"', s.group(0))),
+                None
+            )
             if not server_id:
                 continue
 
-            sources_url = f'https://hianime.to/ajax/v2/episode/sources?id={server_id}'
+            sources_url = f'{self.base_url}/ajax/v2/episode/sources?id={server_id}'
             sources_data = self._download_json(sources_url, episode_id, note=f'Getting {server_type.upper()} Episode Information')
             link = sources_data.get('link')
-
             if not link:
                 continue
 
-            sources_id_match = re.search(r'/embed-2/[^/]+/([^?]+)\?', link)
-            sources_id = sources_id_match.group(1) if sources_id_match else None
+            data = self.run_rabbit(link, self.base_url)
 
-            if not sources_id:
-                continue
-
-            video_url = f'https://megacloud.tv/embed-2/ajax/e-1/getSources?id={sources_id}'
-            video_data = self._download_json(video_url, episode_id, note=f'Getting {server_type.upper()} Episode Formats')
-            sources = video_data.get('sources', [])
-
-            for source in sources:
+            for source in data.get('real', []):
                 file_url = source.get('file')
-
                 if not (file_url and file_url.endswith('.m3u8')):
                     continue
 
-                extracted_formats = self._extract_custom_m3u8_formats(file_url, episode_id, server_type)
+                extracted_formats = self._extract_custom_m3u8_formats(
+                    file_url,
+                    episode_id,
+                    headers={"Referer": "https://megacloud.blog/"},
+                    server_type=server_type
+                )
                 formats.extend(extracted_formats)
 
-            tracks = video_data.get('tracks', [])
+            for track in data.get('resp_json', {}).get('tracks', []):
+                if track.get('kind') != 'captions':
+                    continue
 
-            for track in tracks:
-                if track.get('kind') == 'captions':
-                    file_url = track.get('file')
-                    language = track.get('label')
-                    if language == 'English':
-                        language = f'{language} {server_type.capitalize()}bed'
-                    language_code = self.language_codes.get(language)
-                    if not language_code:
-                        language_code = language
+                file_url = track.get('file')
+                label = track.get('label')
 
-                    if not file_url:
-                        break
+                if label == 'English':
+                    label += f' {server_type.capitalize()}bed'
 
-                    if (language_code) not in subtitles:
-                        subtitles[language_code] = []
+                lang_code = self.language_codes.get(label, label)
 
-                    subtitles[language_code].append({
-                        'name': language,
+                if file_url:
+                    subtitles.setdefault(lang_code, []).append({
+                        'name': label,
                         'url': file_url,
                     })
 
@@ -224,13 +212,33 @@ class HiAnimeIE(InfoExtractor):
             'episode_id': episode_id,
         }
 
-    def _get_elements_by_tag_and_attrib(self, html, tag=None, attribute=None, value=None, escape_value=True):
-        if tag is None:
-            tag = r'[a-zA-Z0-9:._-]+'
+    # ========== Helpers ==========
 
+    def _extract_custom_m3u8_formats(self, m3u8_url, episode_id, headers, server_type=None):
+        formats = self._extract_m3u8_formats(
+            m3u8_url, episode_id, 'mp4', entry_protocol='m3u8_native',
+            fatal=False, note='Downloading M3U8 Information', headers=headers
+        )
+        for f in formats:
+            height = f.get('height')
+            f['format_id'] = f'{server_type.upper()}{height}p'
+            f['language'] = self.language[server_type]
+        return formats
+
+    def _get_anime_title(self, slug, playlist_id):
+        if not self.anime_title:
+            webpage = self._download_webpage(
+                f'{self.base_url}/{slug}-{playlist_id}',
+                playlist_id,
+                note='Fetching Anime Title'
+            )
+            self.anime_title = get_element_by_class('film-name dynamic-name', webpage)
+        return self.anime_title
+
+    def _get_elements_by_tag_and_attrib(self, html, tag=None, attribute=None, value=None, escape_value=True):
+        tag = tag or r'[a-zA-Z0-9:._-]+'
         if attribute:
             attribute = rf'\s+{re.escape(attribute)}'
-
         if value:
             value = re.escape(value) if escape_value else value
             value = f'=[\'"]?(?P<value>.*?{value}.*?)[\'"]?'
@@ -244,3 +252,38 @@ class HiAnimeIE(InfoExtractor):
             (?P<content>.*?)
             </{tag}>
         ''', html))
+
+    def run_rabbit(self, embed_url, site):
+        import urllib.request
+
+        system = platform.system().lower()
+
+        binary_map = {
+            "windows": "rabbit_wasm-win.exe",
+            "darwin": "rabbit_wasm-macos",
+            "linux": "rabbit_wasm-linux"
+        }
+
+        binary = binary_map.get(system)
+        if not binary:
+            raise RuntimeError(f"Unsupported OS: {system}")
+
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        binary_path = os.path.join(script_dir, binary)
+
+        if not os.path.isfile(binary_path):
+            self.to_screen(f"{binary} not found. Downloading from GitHub release...")
+
+            # Replace this URL with your actual GitHub release URL
+            github_url = f"https://github.com/pratikpatel8982/yt-dlp-hianime/releases/download/1.0-wasm/{binary}"
+
+            try:
+                with urllib.request.urlopen(github_url) as response, open(binary_path, 'wb') as out_file:
+                    out_file.write(response.read())
+                if system != 'windows':
+                    os.chmod(binary_path, 0o755)
+            except Exception as e:
+                raise RuntimeError(f"Failed to download {binary} from GitHub: {e}")
+
+        result = subprocess.run([binary_path, embed_url, site], capture_output=True, text=True)
+        return json.loads(result.stdout)
