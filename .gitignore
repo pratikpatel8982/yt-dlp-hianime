@@ -1,3 +1,15 @@
-__pycache__
-*.egg-info/
-*.pyc
+# Ignore built binaries
+rabbit_wasm-linux
+rabbit_wasm-macos
+rabbit_wasm-win.exe
+
+# Ignore build output
+dist/
+rabbit.js
+
+# Ignore Node.js dependencies
+node_modules/
+
+# Ignore text/log/temp/test files
+rabbit.txt
+test.py
