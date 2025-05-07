@@ -86,15 +86,17 @@ class HiAnimeIE(InfoExtractor):
         self.base_url = re.match(r'https?://[^/]+', url).group(0)
 
         if episode_id:
-            return self._extract_episode(slug, playlist_id, episode_id, url)
+            return self._extract_episode(slug, playlist_id, episode_id)
         elif playlist_id:
-            return self._extract_playlist(slug, playlist_id, url)
+            return self._extract_playlist(slug, playlist_id)
         else:
             raise ExtractorError('Unsupported URL format')
 
-    # ========== Playlist and Episode Extraction ==========
+    # ========== Playlist and Episode Extraction ========== #
 
-    def _extract_playlist(self, slug, playlist_id, url):
+    # ========== Playlist Extraction ========== #
+
+    def _extract_playlist(self, slug, playlist_id):
         anime_title = self._get_anime_title(slug, playlist_id)
         playlist_url = f'{self.base_url}/ajax/v2/episode/list/{playlist_id}'
         playlist_data = self._download_json(playlist_url, playlist_id, note='Fetching Episode List')
@@ -129,14 +131,16 @@ class HiAnimeIE(InfoExtractor):
             ))
 
         return self.playlist_result(entries, playlist_id, anime_title)
+    
+    # ========== Episode Extraction ========== #
 
-    def _extract_episode(self, slug, playlist_id, episode_id, url):
+    def _extract_episode(self, slug, playlist_id, episode_id):
         anime_title = self._get_anime_title(slug, playlist_id)
-        episode_data = self.episode_list.get(episode_id)
 
-        if not episode_data:
-            self._extract_playlist(slug, playlist_id, url)
-            episode_data = self.episode_list.get(episode_id)
+        if episode_id not in self.episode_list:
+            self._extract_playlist(slug, playlist_id)
+
+        episode_data = self.episode_list.get(episode_id)
 
         if not episode_data:
             raise ExtractorError(f'Episode data for episode_id {episode_id} not found')
@@ -212,27 +216,29 @@ class HiAnimeIE(InfoExtractor):
             'episode_id': episode_id,
         }
 
-    # ========== Helpers ==========
+    # ========== Helpers ========== #
 
     def _extract_custom_m3u8_formats(self, m3u8_url, episode_id, headers, server_type=None):
         formats = self._extract_m3u8_formats(
             m3u8_url, episode_id, 'mp4', entry_protocol='m3u8_native',
-            fatal=False, note='Downloading M3U8 Information', headers=headers
+            note='Downloading M3U8 Information', headers=headers
         )
         for f in formats:
             height = f.get('height')
-            f['format_id'] = f'{server_type.upper()}{height}p'
+            f['format_id'] = f'{server_type}_{height}p'
             f['language'] = self.language[server_type]
+            f['http_headers'] = headers
         return formats
 
     def _get_anime_title(self, slug, playlist_id):
-        if not self.anime_title:
-            webpage = self._download_webpage(
-                f'{self.base_url}/{slug}-{playlist_id}',
-                playlist_id,
-                note='Fetching Anime Title'
-            )
-            self.anime_title = get_element_by_class('film-name dynamic-name', webpage)
+        if self.anime_title:
+            return self.anime_title
+        webpage = self._download_webpage(
+            f'{self.base_url}/{slug}-{playlist_id}',
+            playlist_id,
+            note='Fetching Anime Title'
+        )
+        self.anime_title = get_element_by_class('film-name dynamic-name', webpage)
         return self.anime_title
 
     def _get_elements_by_tag_and_attrib(self, html, tag=None, attribute=None, value=None, escape_value=True):
@@ -257,7 +263,6 @@ class HiAnimeIE(InfoExtractor):
         import urllib.request
 
         system = platform.system().lower()
-
         binary_map = {
             "windows": "rabbit_wasm-win.exe",
             "darwin": "rabbit_wasm-macos",
@@ -266,24 +271,46 @@ class HiAnimeIE(InfoExtractor):
 
         binary = binary_map.get(system)
         if not binary:
-            raise RuntimeError(f"Unsupported OS: {system}")
+            raise ExtractorError(f"Unsupported OS: {system}")
 
         script_dir = os.path.dirname(os.path.abspath(__file__))
         binary_path = os.path.join(script_dir, binary)
 
-        if not os.path.isfile(binary_path):
-            self.to_screen(f"{binary} not found. Downloading from GitHub release...")
+        # Early exit if binary exists
+        if os.path.isfile(binary_path):
+            return self._execute_rabbit(binary_path, embed_url, site)
 
-            # Replace this URL with your actual GitHub release URL
-            github_url = f"https://github.com/pratikpatel8982/yt-dlp-hianime/releases/download/1.0-wasm/{binary}"
+        # Handle binary download
+        self.to_screen(f"{binary} not found. Downloading from GitHub release...")
 
-            try:
-                with urllib.request.urlopen(github_url) as response, open(binary_path, 'wb') as out_file:
-                    out_file.write(response.read())
-                if system != 'windows':
-                    os.chmod(binary_path, 0o755)
-            except Exception as e:
-                raise RuntimeError(f"Failed to download {binary} from GitHub: {e}")
+        github_url = f"https://github.com/pratikpatel8982/yt-dlp-hianime/releases/download/1.0-wasm/{binary}"
+        try:
+            with urllib.request.urlopen(github_url) as response, open(binary_path, 'wb') as out_file:
+                out_file.write(response.read())
+            if system != 'windows':
+                os.chmod(binary_path, 0o755)
+        except Exception as e:
+            raise ExtractorError(f"Failed to download {binary} from GitHub: {e}")
 
-        result = subprocess.run([binary_path, embed_url, site], capture_output=True, text=True)
-        return json.loads(result.stdout)
+        return self._execute_rabbit(binary_path, embed_url, site)
+
+    def _execute_rabbit(self, binary_path, embed_url, site):
+        try:
+            result = subprocess.run([binary_path, embed_url, site], capture_output=True, text=True, timeout=30)
+
+            if result.returncode != 0:
+                self.to_screen(f"[rabbit] stderr:\n{result.stderr.strip()}")
+                raise ExtractorError("Rabbit binary failed to execute successfully.")
+
+            if not result.stdout.strip():
+                raise ExtractorError("Rabbit binary returned empty output.")
+
+            return json.loads(result.stdout)
+
+        except subprocess.TimeoutExpired:
+            raise ExtractorError("Rabbit binary execution timed out.")
+        except json.JSONDecodeError:
+            self.to_screen(f"[rabbit] raw stdout:\n{result.stdout.strip()}")
+            raise ExtractorError("Rabbit returned invalid JSON.")
+        except Exception as e:
+            raise ExtractorError(f"Unexpected error running Rabbit: {e}")
