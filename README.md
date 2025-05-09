@@ -1,6 +1,6 @@
 **RabbitStream WASM extractor**
 
-This tool extracts the video sources from RabbitStream embeds. It is designed for use in projects like anime/video extractors where RabbitStream is used as a streaming provider.
+This tool extracts the video sources from RabbitStream embeds. It is designed for use in projects like anime/video extractors where RabbitStream is used as a streaming provider. It is used by the hianime extractor to retrieve sources from Megacloud URLs
 
 ## Usage
 
@@ -32,4 +32,3 @@ Full credit to the original author for the WebAssembly-based RabbitStream revers
 
 ---
 
-Let me know if you'd like to include build instructions for the binaries or usage within your Python extractor too.
