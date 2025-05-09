@@ -1,6 +1,6 @@
 **RabbitStream WASM extractor**
 
-This tool extracts the video sources from RabbitStream embeds. It is designed for use in projects like anime/video extractors where RabbitStream is used as a streaming provider. It is used by the hianime extractor to retrieve sources from Megacloud URLs
+This tool extracts the video sources from Megacloud embeds. It is designed for anime/video extractors where Megacloud is used as a streaming provider. It is used by the hianime extractor to retrieve sources from Megacloud URLs
 
 ## Usage
 
