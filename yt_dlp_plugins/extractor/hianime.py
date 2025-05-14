@@ -1,3 +1,4 @@
+__version__ = "2.1.0"
 import os
 import re
 import json
@@ -152,15 +153,31 @@ class HiAnimeIE(InfoExtractor):
         subtitles = {}
 
         for server_type in ['sub', 'dub', 'raw']:
-            server_items = self._get_elements_by_tag_and_attrib(
+            # 1. Initial element fetching
+            server_items_from_func = self._get_elements_by_tag_and_attrib(
                 servers_data['html'], tag='div', attribute='data-type', value=server_type, escape_value=False
             )
-            server_items = [s for s in server_items if f'data-type="{server_type}"' in s.group(0)]
-
+            
+            # 2. Stricter filtering
+            server_items_filtered = [s for s in server_items_from_func if f'data-type="{server_type}"' in s.group(0)]
+            
+            # 3. Extracting the server ID
+            target_link_text = "HD-1"
             server_id = next(
-                (re.search(r'data-id="([^"]+)"', s.group(0)).group(1)
-                 for s in server_items if re.search(r'data-id="([^"]+)"', s.group(0))),
-                None
+                (
+                    # This part extracts the data-id if all conditions are met
+                    re.search(r'data-id="([^"]+)"', s.group(0)).group(1)
+                    
+                    # Iterate through the server items already filtered by server_type
+                    for s in server_items_filtered 
+                    
+                    # Add a condition to check for the specific link text
+                    # This regex looks for "> HD-1 </a>", allowing for optional whitespace
+                    if re.search(rf'>\s*{re.escape(target_link_text)}\s*</a>', s.group(0))
+                    # And ensure the data-id attribute exists (good practice before .group(1))
+                    and re.search(r'data-id="([^"]+)"', s.group(0))
+                ),
+                None  # Default value if no such item is found
             )
             if not server_id:
                 continue
