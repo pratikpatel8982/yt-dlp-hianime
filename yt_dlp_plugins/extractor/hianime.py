@@ -1,3 +1,4 @@
+__version__ = "2.1.0"
 import os
 import re
 import json
