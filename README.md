@@ -14,6 +14,6 @@ This plugin will be invoked automatically when it detects compatible url.
 
 ## Requirements
 
-Python 3.11
+Python 3.11 and Requests
 
 Recommended to use with yt-dlp python package instead of bianries.
